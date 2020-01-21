@@ -1,10 +1,6 @@
-#AUTHOR: Michael Lee
-
 library(dplyr)
 library(purrr)
 library(twitteR)
-#library(openssl)
-#library(httpuv)
 library(tidyr)
 library(tidyverse)
 library(base)
@@ -16,9 +12,10 @@ setup_twitter_oauth(consumer_key = "",
                     access_secret = ""
                     )
 #Retrieval of tweet
-tweets <- userTimeline("elonmusk", n = 3200, includeRts = TRUE, excludeReplies = TRUE)
+tweets <- userTimeline("CNN", n = 3200, includeRts = TRUE, excludeReplies = TRUE)
 tweets_df <- tbl_df(map_df(tweets,as.data.frame))
 
+#:: DATA INITIALIZATION & CLEANING ::
 #Cleaning data
 cleaned.tweets <- tweets_df %>%
   select(id, text, created)
@@ -73,6 +70,7 @@ words.sentiment <- word.freq %>%
   ((function(x) cbind((x[,1]), (x[,2]*x[,3]))))
 words.sentiment <- as.data.frame(words.sentiment)
 
+#:: MAIN ANALYSIS 1 :: Overall Negative VS. Positive Sentiment by words only
 #Convert (word vs freq) data.frame columns into proper type
 library(ggplot2)
 library(taRifx)
@@ -92,6 +90,7 @@ ggplot(sent.graph, aes(V1,V2)) +
   labs(title = "Sentiment Analysis of Frequently Used Words", fill = "Sentiment", caption = "Words (y-axis) are sorted from the most frequent from top to bottom") +
   scale_fill_discrete(labels = c("Positive","Negative"))
 
+#:: MAIN ANALYSIS 2 :: Normal Distribution by negativity level
 #Categorize words by sentiment values for Normal Curve Distribution Analysis
 
 word.freq.grouped <- word.freq %>%
@@ -112,4 +111,25 @@ library(e1071)
 skewness(distribution$freq.grouped, type = 3) #Shows how negative or positive tweets are in general
 kurtosis(distribution$freq.grouped, type = 3) #Shows how extreme sentiments are in the tweets
 
-#Analyzing Sentiment over time
+#:: MAIN ANALYSIS 3 :: Analyzing Sentiment over time (Does negativity differ greatly by publishing stations?)
+#Excluding the retweeted Twitter account name (which itself is irrelevant to tone)
+text.time <- filtered.texts %>% 
+  filter(!str_detect(texts,"@[A-Za-z]\\w+")) %>%
+  (function(y) as.data.frame(lapply(y, (function(x) gsub("[[:punct:]]", "",x))))) %>%
+  remove.factors()
+
+text.time$new.date <- text.time$date %>% 
+  substr(1,8)
+#Delete this block (below)
+temp.date <- text.time %>% inner_join(get_sentiments("afinn"), by =c("texts"="word")) %>%
+  group_by(new.date)
+#Delete this block (above)
+
+text.date <- text.time %>% inner_join(get_sentiments("afinn"), by =c("texts"="word")) %>%
+  group_by(new.date) %>%
+  summarize(mean = mean(value))
+
+ggplot(text.date, aes(new.date, mean, group = 1)) + geom_point(stat = "identity") +geom_line(color = "green") + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+
