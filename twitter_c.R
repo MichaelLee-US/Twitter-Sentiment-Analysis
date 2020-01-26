@@ -12,14 +12,14 @@ setup_twitter_oauth(consumer_key = "",
                     access_secret = ""
                     )
 
-tweets <- userTimeline("", n = 3200, includeRts = TRUE, excludeReplies = TRUE)
-tweets_df <- tbl_df(map_df(tweets,as.data.frame))
+retrieve.tweet <- function(account.name){
+  tweets <- userTimeline(account.name, n = 3200, includeRts = TRUE, excludeReplies = TRUE)
+  tweets_df <- tbl_df(map_df(tweets,as.data.frame))
+}
 
-tweet.analysis <-  function(twitter.data) {
-  
+analyze.tweet <- function(tweet.data){
   #:: DATA INITIALIZATION & CLEANING ::
-  #Cleaning data
-  cleaned.tweets <- twitter.data %>%
+  cleaned.tweets <- tweet.data %>% 
     select(id, text, created)
   
   #Transform tweets into a list of words
@@ -72,6 +72,7 @@ tweet.analysis <-  function(twitter.data) {
     ((function(x) cbind((x[,1]), (x[,2]*x[,3]))))
   words.sentiment <- as.data.frame(words.sentiment)
   
+  
   #:: MAIN ANALYSIS 1 :: Overall Negative VS. Positive Sentiment by words only
   #Convert (word vs freq) data.frame columns into proper type
   library(ggplot2)
@@ -82,26 +83,26 @@ tweet.analysis <-  function(twitter.data) {
   new.sent <- small.sent[order(small.sent$abs, decreasing = TRUE),]
   new.sent$V1 <- factor(new.sent$V1, levels = rev(new.sent$V1))
   sent.graph <- new.sent[1:30,]
-  sent.graph$color <- ifelse(sent.graph$V2 > 0, "green2", "red")
+  sent.graph$color <- ifelse(sent.graph$V2 > 0, "red", "green")
   #Produce Sentiment vs Words Chart
-  ggplot(sent.graph, aes(V1,V2)) + 
+  plot1 <- ggplot(sent.graph, aes(V1,V2)) + 
     geom_bar(stat = "identity", aes(fill = color)) + 
     coord_flip() + 
     ylab("Sentiment Multiplier (Frequency x Multiplier)") +
     xlab("Words") +
     labs(title = "Sentiment Analysis of Frequently Used Words", fill = "Sentiment", caption = "Words (y-axis) are sorted from the most frequent from top to bottom") +
-    scale_fill_discrete(labels = c("Positive","Negative"))
+    scale_fill_discrete(labels = c("Negative","Positive"))
+  
   
   #:: MAIN ANALYSIS 2 :: Normal Distribution by negativity level
   #Categorize words by sentiment values for Normal Curve Distribution Analysis
-  
   word.freq.grouped <- word.freq %>%
     inner_join(get_sentiments("afinn"), by =c("z"="word")) %>%
     group_by(value)
   distribution <- word.freq.grouped %>% 
     summarise(freq.grouped = sum(Freq))
   
-  dist.graph <- ggplot(distribution,aes(value,freq.grouped)) + geom_point() + geom_line(color = "black") +
+  plot2 <- dist.graph <- ggplot(distribution,aes(value,freq.grouped)) + geom_point() + geom_line(color = "black") +
     labs(title = "Distribution of Textual Sentiment", caption = "-5 is Most Negative, +5 is Most Positive" ) +
     geom_line(aes(0,), data = NULL, color = "red") +
     xlim(-5,5) +
@@ -110,8 +111,8 @@ tweet.analysis <-  function(twitter.data) {
   
   #Calculating skewness & kurtosis
   library(e1071)
-  print(skewness(distribution$freq.grouped, type = 3)) #Shows how negative or positive tweets are in general
-  print(kurtosis(distribution$freq.grouped, type = 3)) #Shows how extreme sentiments are in the tweets
+  val.skewness <- skewness(distribution$freq.grouped, type = 3) #Shows how negative or positive tweets are in general
+  val.kurtosis <- kurtosis(distribution$freq.grouped, type = 3) #Shows how extreme sentiments are in the tweets
   
   
   #:: MAIN ANALYSIS 3 :: Analyzing Sentiment over time (Does negativity differ greatly by publishing stations?)
@@ -124,27 +125,41 @@ tweet.analysis <-  function(twitter.data) {
   text.time$new.date <- text.time$date %>% 
     substr(1,8)
   #The block below is repeated to generate plot of different Twitter accounts
-  #text.date = CNN, 1 = FOX News, 2 = MSNBC, 3 = VOX, 4 = NYT, 5 = WIRED
-  text.date5 <- text.time %>% inner_join(get_sentiments("afinn"), by =c("texts"="word")) %>%
+  #text.date = CNN, 2 = MSNBC, 3 = VOX, 4 = NYT, 5 = WIRED
+  text.date <- text.time %>% inner_join(get_sentiments("afinn"), by =c("texts"="word")) %>%
     group_by(new.date) %>%
     summarize(mean = mean(value))
   #return(dist.graph)
-  return(text.date5)
+  
+  list.analysis <- list(words.sentiment,plot1,distribution,plot2,val.skewness,val.kurtosis,text.date)
+  return(list.analysis)
   }
 
+tweet.cnn <- retrieve.tweet("CNN")
+tweet.msnbc <- retrieve.tweet("MSNBC")
+tweet.vox <- retrieve.tweet("voxdotcom")
+tweet.nyt <- retrieve.tweet("nytimes")
+tweet.wired <- retrieve.tweet("WIRED")
 
+data.cnn <- analyze.tweet(tweet.cnn)
+data.msnbc <- analyze.tweet(tweet.msnbc)
+data.vox <- analyze.tweet(tweet.vox)
+data.nyt <- analyze.tweet(tweet.nyt)
+data.wired <- analyze.tweet(tweet.wired)
 
 #TEMPORARY BLOCK
-text.date <- as.numeric(text.date$new.date)
-text.dat.nyt <- as.numeric(text.date.nyt$new.date)
-text.date2 <- as.numeric(text.date2$new.date)
-text.date.vox <- as.numeric(text.date.vox$new.date)
+num.text.date.cnn <- as.numeric(text.date.cnn$new.date)
+num.text.dat.msnbc <- as.numeric(text.date.msnbc$new.date)
+num.text.date.vox <- as.numeric(text.date.vox$new.date)
+num.text.dat.nyt <- as.numeric(text.date.nyt$new.date)
+num.text.date.wired <- as.numeric(text.date.wired$new.date)
 
-ggplot() + 
-  #geom_point(data = text.date, aes(new.date, mean, group = 1),stat = "identity") +
-  geom_line(data = text.date, aes(new.date, mean, group = 1),color = "red") + 
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_line(data = text.date2, aes(new.date, mean, group =1), color = "green") +
-  geom_line(data = text.date.vox, aes(new.date, mean, group =1), color = "yellow") +
-  geom_line(data = text.date.nyt, aes(new.date, mean, group =1), color = "blue") +
+
+ggplot() +
+geom_line(data = data.cnn[[7]], aes(new.date, mean, group = 1),color = "red") +
+theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+geom_line(data = data.msnbc[[7]], aes(new.date, mean, group =1), color = "green") +
+geom_line(data = data.vox[[7]], aes(new.date, mean, group =1), color = "purple") 
+geom_line(data = data.nyt[[7]], aes(new.date, mean, group =1), color = "blue") 
+geom_line(data = data.wired[[7]], aes(new.date, mean, group =1), color = "black") 
   xlim(20191230, 20200121)
